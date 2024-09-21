@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify
 from app.extensions import mongo
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
 
 webhook = Blueprint('Webhook', __name__, url_prefix='/webhook')
@@ -19,51 +19,61 @@ def receiver():
 
 
 def save_push_event(payload):
+    print(f"push")
     author = payload['pusher']['name']
     to_branch = payload['ref'].split('/')[-1]
-    timestamp = datetime.utcnow()
+    timestamp = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S %Z')
     commit_hash = payload['after'] 
-
-    mongo.db.events.insert_one({
-        "type": "push",
+    data = {
+        "action": "PUSH",
         "author": author,
         "to_branch": to_branch,
         "timestamp": timestamp,
         "request_id": commit_hash
-    })
+    }
+    print(data)
+    mongo.db.events.insert_one(data)
 
 def save_pull_request_event(payload):
-    author = payload['pull_request']['user']['login']
-    from_branch = payload['pull_request']['head']['ref']
-    to_branch = payload['pull_request']['base']['ref']
-    timestamp = datetime.utcnow()
-    pr_id = str(payload['pull_request']['id'])
-
-    mongo.db.events.insert_one({
-        "type": "pull_request",
-        "author": author,
-        "from_branch": from_branch,
-        "to_branch": to_branch,
-        "timestamp": timestamp,
-        "request_id": pr_id
-    })
-
-def save_merge_event(payload):
     if payload['action'] == 'closed' and payload['pull_request']['merged']:
-        author = payload['pull_request']['merged_by']['login']
+        print("merge")
+        save_merge_event(payload)
+    else:
+        print(f"Pull")
+        author = payload['pull_request']['user']['login']
         from_branch = payload['pull_request']['head']['ref']
         to_branch = payload['pull_request']['base']['ref']
-        timestamp = datetime.utcnow()
+        timestamp = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S %Z')
         pr_id = str(payload['pull_request']['id'])
-
-        mongo.db.events.insert_one({
-            "type": "merge",
+        data = {
+            "action": "PULL_REQUEST",
             "author": author,
             "from_branch": from_branch,
             "to_branch": to_branch,
             "timestamp": timestamp,
             "request_id": pr_id
-        })
+        }
+        print(data)
+
+        mongo.db.events.insert_one(data)
+
+def save_merge_event(payload):
+    author = payload['pull_request']['merged_by']['login']
+    from_branch = payload['pull_request']['head']['ref']
+    to_branch = payload['pull_request']['base']['ref']
+    timestamp = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S %Z')
+    pr_id = str(payload['pull_request']['id'])
+    data = {
+        "action": "MERGE",
+        "author": author,
+        "from_branch": from_branch,
+        "to_branch": to_branch,
+        "timestamp": timestamp,
+        "request_id": pr_id
+    }
+    print(data)
+
+    mongo.db.events.insert_one(data)
 
 
 @webhook.route('/events', methods=["GET"])
